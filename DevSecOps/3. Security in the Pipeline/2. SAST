@@ -1,0 +1,173 @@
+# Static Application Security Testing (SAST) Cheatsheet
+
+---
+
+## **1. Overview of SAST**
+
+- **Definition:**  
+  - **SAST** is an automated method of analyzing source code for security vulnerabilities without executing the application.
+  - Also known as static code analysis or white box testing.
+
+- **Purpose:**  
+  - Identify security flaws early in the development process.
+  - Complement other testing techniques such as DAST (Dynamic Application Security Testing) and SCA (Software Composition Analysis).
+
+---
+
+## **2. Manual Code Review for Security**
+
+- **What is Manual Code Review?**  
+  - A systematic examination of an application’s source code to identify potential vulnerabilities.
+  - Uses a white box approach to analyze code context, logical flows, and insecure coding patterns.
+
+- **Key Steps in Manual Code Review:**  
+  - **Identify Insecure Functions:**  
+    - Look for functions that send raw queries to a database (e.g., `mysqli_query()`, `mysql_query()`, `mysqli_prepare()`, etc.).  
+    - *Example:* Using `grep -r -n 'mysqli_query('` in Linux to find occurrences.
+  
+  - **Analyze Context:**  
+    - Open files to check how functions are used within the code.
+    - Trace function calls to see if vulnerable inputs (such as unsanitized GET/POST parameters) flow into critical functions.
+  
+  - **Tracing Data Flow:**  
+    - Follow how user inputs (sources) are passed into database query functions (sinks).
+    - *Real-Life Example:* The code concatenates a GET parameter into an SQL query without proper sanitization, leading to SQL injection.
+
+- **Advantages & Challenges:**  
+  - **Pros:**  
+    - Detailed, human insight into complex code logic.
+    - Catches subtle vulnerabilities that automated tools might miss.
+  - **Cons:**  
+    - Time-consuming and error-prone with large code bases.
+    - Potential for reviewer fatigue.
+
+---
+
+## **3. Automated Code Review with SAST Tools**
+
+- **What is SAST in Automated Testing?**  
+  - Uses automated tools to analyze code structures for security issues.
+  - Provides quick feedback and integrates well with CI/CD pipelines.
+
+- **Pros:**  
+  - Does not require a running application.
+  - Fast and covers a large code base consistently.
+  - Easy integration into development workflows (e.g., CI/CD, IDE plugins).
+
+- **Cons:**  
+  - Limited to source-accessible code (third-party apps may not be analyzable).
+  - Susceptible to false positives (reporting non-issues) and false negatives (missing actual vulnerabilities).
+  - Mostly language specific.
+
+---
+
+## **4. SAST Analysis Techniques**
+
+- **Semantic Analysis:**  
+  - Similar to grepping insecure functions.
+  - Example: Detecting direct concatenation of user input in calls like `mysqli_query($db, "SELECT * FROM users WHERE username=" . $_GET['username'])`.
+
+- **Dataflow Analysis:**  
+  - Traces how data moves from a user-controlled source to sensitive sinks.
+  - Uses the concept of **sources** (user inputs) and **sinks** (dangerous function calls).
+  - *Real-Life Example:* Tainted input from `$_GET` flowing into a function like `db_query()` that wraps `mysqli_query()`.
+
+- **Control Flow Analysis:**  
+  - Evaluates the sequence of execution.
+  - Identifies issues such as race conditions, uninitialized variables or resource leaks.
+  - *Example:* Calling methods on a potentially `NULL` value (e.g., `$cmd = System.getProperty('cmd'); cmd.trim();`).
+
+- **Structural Analysis:**  
+  - Checks language-specific structures and best practices.
+  - Examples include detecting weak cryptographic setups or configurations—for instance, an RSA implementation with a 1024-bit key.
+
+- **Configuration Analysis:**  
+  - Analyzes configuration files (e.g., `php.ini`, `web.config`) for insecure settings.
+  - *Example:* Configuration directives like `allow_url_include = On` can facilitate remote file inclusion attacks.
+
+---
+
+## **5. Real-Life Code Example (SQL Injection):**
+
+- **Scenario:**  
+  - Reviewing code for SQL injection vulnerabilities with PHP and MySQL.
+  - Example analysis flow:
+    - **Search for Insecure Functions:**  
+      - Use grep to locate `mysqli_query()` occurrences.
+    - **Context Investigation:**  
+      - Open `db.php` to inspect the function `db_query()` which simply delegates to `mysqli_query()`.
+    - **Tracing Vulnerable Inputs:**  
+      - Identify that in `hidden-panel.php`, user input via `$_GET['guest_id']` is concatenated without sanitization:
+        - `"$sql = SELECT id, firstname, lastname FROM MyGuests WHERE id=" . $_GET['guest_id'];"`
+      - Notable vulnerability: Unsanitized user input enabling SQL injection.
+    - **Sanitization Check:**  
+      - Contrast with other queries where `preg_replace()` is used.
+      - Notice potential pitfalls, such as incomplete filtering if parameters (e.g., using `preg_replace()` with a limit) let through dangerous characters.
+
+---
+
+## **6. SAST Tools in Practice (Using Psalm and Semgrep)**
+
+- **Psalm Tool:**  
+  - **Usage:**  
+    - Run via command line (e.g., `./vendor/bin/psalm --no-cache` for structural analysis, `--taint-analysis` for dataflow issues).
+  - **Features:**  
+    - Reports type errors, incorrect comparisons (e.g., using assignment instead of comparison).
+    - With taint analysis, detects vulnerabilities (e.g., SQL injections, Local File Inclusions).
+  - **Annotations:**  
+    - Developers can add annotations like `@psalm-taint-sink` to mark functions (e.g., `db_query()`) for taint analysis to reduce false positives.
+  - **Real Insights:**  
+    - Psalm can report differences from manual analysis, highlighting both false positives and false negatives.
+  
+- **Semgrep:**  
+  - **Integration:**  
+    - Can be installed as a plugin in VS Code.
+    - Allows real-time scanning and even custom rule creation.
+  - **How it Helps:**  
+    - Provides inline alerts and a summary of issues in each file.
+  
+- **IDE Integration Benefits:**  
+  - Instant feedback while coding.
+  - Reduces the likelihood of introducing vulnerabilities.
+  - Helps enforce secure coding practices directly in the development environment.
+
+---
+
+## **7. SAST in the Development Lifecycle**
+
+- **Early Detection:**  
+  - SAST is often one of the first security tools in the development cycle.
+  - It can be implemented from the coding phase.
+
+- **Deployment Options:**  
+  - **CI/CD Integration:**  
+    - Run SAST scans on pull requests or when merging code.
+    - Balances speed (running minimal checks early) with thorough analysis on more significant code changes.
+  - **IDE Integration:**  
+    - Tools like Psalm and Semgrep provide real-time feedback at the point of writing code.
+    - Helps developers fix issues immediately rather than later in the pipeline.
+
+- **Key Considerations:**  
+  - Understand that SAST tools are best used as a complement to manual reviews.
+  - Regularly update configuration and rules to match project-specific security requirements.
+
+---
+
+## **8. Practical Tips**
+
+- **Balancing Manual and Automated Reviews:**  
+  - Use automated SAST tools for rapid, consistent checks on the large code base.
+  - Rely on manual code reviews for complex logic or vulnerabilities that automated tools might not catch.
+
+- **Review and Update Sanitization Methods:**  
+  - Always verify that filtering mechanisms (e.g., `preg_replace()`) fully protect against injection attacks.
+  - Examine edge cases where filtering may be incomplete (e.g., limits on replacements).
+
+- **Configure Your Tools Thoughtfully:**  
+  - Use annotations and customize configurations to reduce noise from false positives.
+  - Regularly run taint analysis to trace data from untrusted sources to critical sinks.
+
+---
+
+**Real-Life Example Recap:**  
+Imagine a web application where a GET parameter (such as `guest_id`) is directly concatenated into an SQL query. A manual review using grep identifies this risky pattern. When running Psalm with taint analysis, an error pinpointing the SQL injection vulnerability appears, indicating that sanitized input is not being enforced. This example underscores the value of integrating both manual and automated reviews into everyday development.
